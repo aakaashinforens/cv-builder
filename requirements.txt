@@ -1,5 +1,5 @@
-pdfplumber
 python-docx
-openai
-python-dotenv
+docx2txt
+PyPDF2
 requests
+python-dotenv

@@ -1,69 +1,14 @@
 import sys
-from parse_cv import extract_info_from_pdf, extract_info_from_docx
+from parse_cv import extract_text_from_file
 from prompt_builder import build_prompt
-from generate_cv import call_perplexity  # import your call_perplexity function
-from save import save_as_docx, save_as_pdf
-
-
-def get_work_experience_entries():
-    entries = []
-    while True:
-        print("\n--- Enter Work Experience Entry ---")
-        company = input("Company Name: ").strip()
-        location = input("Location (optional): ").strip()
-        role = input("Role/Designation: ").strip()
-        duration = input("Duration: ").strip()
-        responsibilities = []
-
-        print("Enter responsibilities (type 'done' when finished):")
-        while True:
-            resp = input(" - ")
-            if resp.strip().lower() == "done": #when you enter done, it will end
-                break
-            elif resp.strip():
-                responsibilities.append(resp.strip())
-
-        entry = f"{role} at {company}, {location or 'N/A'} ({duration})\n" + "\n".join(f"- {r}" for r in responsibilities)
-        entries.append(entry)
-#ask if they want to add another work ex
-        more = input("Add another work experience entry? (yes/no): ").strip().lower()
-        if more != "yes":
-            break
-    return "\n\n".join(entries)
-
-def get_education_entries():
-    entries = []
-    while True:
-        print("\n--- Enter Education Entry ---")
-        university = input("University Name: ").strip()
-        location = input("Location (optional): ").strip()
-        degree = input("Degree: ").strip()
-        completed = input("Is this course ongoing or completed?: ").strip().lower()
-        course = input("Course Name: ").strip()
-        duration = input("Duration: ").strip()
-        relevant = input("Relevant Coursework (optional): ").strip()
-        outcome = input("Outcome / Expected outcome (optional): ").strip()
-
-        entry = f"{degree} in {course}, {university}, {location or 'N/A'} ({duration})"
-        if relevant:
-            entry += f"\nRelevant Coursework: {relevant}"
-        if completed == "completed":
-            entry += f"\nOutcome: {outcome}"
-        elif completed == "ongoing":
-            entry += f"\nExpected outcome: {outcome}"
-
-        entries.append(entry)
-
-        more = input("Add another education entry? (yes/no): ").strip().lower()
-        if more != "yes":
-            break
-    return "\n\n".join(entries)
+from generate_cv import call_perplexity
+from save import save_as_docx
 
 def main():
-    workflow = input("Choose workflow (new / existing): ").lower() #new cv or existing cv
+    workflow = input("Choose workflow (new / existing): ").lower()
     user_data = {}
-    has_work_exp = None
-
+    prompt = None  # ensure prompt is defined
+    
     if workflow == "new":
         has_work_exp = input("Do you have relevant work experience? (yes/no): ").strip().lower()
         if has_work_exp not in ("yes", "no"):
@@ -79,55 +24,62 @@ def main():
             "phone": input("Phone number: "),
             "linkedin": input("LinkedIn URL (optional): "),
             "location": input("Location: (optional) "),
-            "work_experience": get_work_experience_entries() if has_work_exp == "yes" else "",
-            "education": get_education_entries(),
+            "work_experience": input("Work Experience (paste or type, optional): "),
+            "education": input("Education details (paste or type, optional): "),
             "skills": input("Skills: "),
             "certificates": input("Certificates and awards (optional): "),
-            "projects": input("Projects: (optional) ")
+            "projects": input("Projects (optional): ")
         }
+
+        prompt = build_prompt(user_data)
 
     elif workflow == "existing":
         file_path = input("Path to CV file (PDF or DOCX): ").strip()
-        if file_path.endswith(".pdf"):
-            user_data = extract_info_from_pdf(file_path)
-        elif file_path.endswith(".docx"):
-            user_data = extract_info_from_docx(file_path)
-        else:
-            print("Unsupported file type")
-            sys.exit(1)
+        raw_text = extract_text_from_file(file_path)
 
         choice = input("Reformat for a (country/company)? ").lower()
         if choice == "country":
-            user_data["target_country"] = input("Enter target country: ")
-        else:
-            user_data["job_description"] = input("Paste JD here: ")
+            target = input("Enter target country: ")
+            user_data["target_country"] = target
+        else:  # company flow
+            jd = input("Paste JD here: ")
+            user_data["job_description"] = jd
 
         user_data["cv_length"] = input("CV length (1 or 2 pages): (optional) ")
         user_data["style"] = input("CV style (Formal / Modern / Creative / ATS-friendly / etc.): (optional) ")
+
+        prompt = build_prompt(user_data, raw_text=raw_text)
 
     else:
         print("Invalid workflow")
         sys.exit(1)
 
-    prompt = build_prompt(user_data, has_work_exp)
-
     try:
+        # Generate CV
         generated_cv = call_perplexity(prompt)
         print("\nGenerated CV:\n")
         print(generated_cv)
 
-#need to find alternatives for downloading cv
-        download_choice = input("\nDo you want to download the CV? (yes/no): ").strip().lower()
+        download_choice = input("\nDo you want to download the CV as DOCX? (yes/no): ").strip().lower()
         if download_choice == "yes":
-            file_type = input("Choose file format (pdf/docx): ").strip().lower()
-            if file_type == "pdf":
-                save_as_pdf(generated_cv)
-            elif file_type == "docx":
-                save_as_docx(generated_cv)
-            else:
-                print("Unsupported file format. Please choose 'pdf' or 'docx'.")
+            save_as_docx(generated_cv)
+
+        # --- Optional cover letter for company workflow ---
+        if workflow == "existing" and choice == "company":
+            cover_choice = input("\nDo you want to generate a cover letter for this JD? (yes/no): ").strip().lower()
+            if cover_choice == "yes":
+                cover_prompt = f"Using the CV below and the job description, create a professional cover letter:\n\nCV:\n{generated_cv}\n\nJD:\n{user_data['job_description']}"
+                generated_cover = call_perplexity(cover_prompt)
+                print("\nGenerated Cover Letter:\n")
+                print(generated_cover)
+
+                save_cover = input("\nDo you want to download the cover letter as DOCX? (yes/no): ").strip().lower()
+                if save_cover == "yes":
+                    save_as_docx(generated_cover, filename="cover_letter.docx")
+
     except Exception as e:
-        print(f"Error generating CV: {e}")
+        print(f"Error generating CV/cover letter: {e}")
+
 
 if __name__ == "__main__":
     main()

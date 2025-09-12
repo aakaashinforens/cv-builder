@@ -1,28 +1,27 @@
-#call perplexity
 import requests
 import os
 from dotenv import load_dotenv
 
+# Load .env
 load_dotenv()
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+
+API_KEY = os.getenv("PERPLEXITY_API_KEY")
+print("DEBUG API_KEY:", "Loaded" if API_KEY else "Not found")
+
+if not API_KEY:
+    raise ValueError(" Missing PERPLEXITY_API_KEY. Please set it in your .env or system environment.")
 
 def call_perplexity(prompt):
     url = "https://api.perplexity.ai/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
     payload = {
         "model": "sonar",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
+        "messages": [{"role": "user", "content": prompt}],
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, headers=headers, json=payload)
+    response.raise_for_status()
+    data = response.json()
 
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    else:
-        raise Exception(f"Perplexity API Error: {response.status_code} {response.text}")
+    return data["choices"][0]["message"]["content"]
